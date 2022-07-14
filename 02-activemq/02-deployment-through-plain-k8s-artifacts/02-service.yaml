@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: activemq-client
+  namespace: activemq-system
+  labels:
+    app.kubernetes.io/name: activemq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: activemq-cluster
+  ports:
+  - name: amqp
+    port: 5672
+    protocol: TCP
+    targetPort: 5672
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: activemq-management
+  namespace: activemq-system
+  labels:
+    app.kubernetes.io/name: activemq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: activemq-cluster
+  ports:
+  - name: management
+    port: 8161
+    protocol: TCP
+    targetPort: 8161

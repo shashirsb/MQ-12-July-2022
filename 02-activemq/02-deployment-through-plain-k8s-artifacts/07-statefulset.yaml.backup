@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: activemq-cluster-server
+  namespace: activemq-system
+  labels:
+    app.kubernetes.io/name: activemq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+spec:
+  serviceName: activemq-client
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: activemq-cluster
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: activemq-cluster
+        app.kubernetes.io/part-of: messaging-system
+        app.kubernetes.io/component: message-broker
+    spec:
+      containers:
+      - name: activemq
+        image: akashdocker29/apache-activemq:5.10.0
+        imagePullPolicy: Always
+        ports:
+        - name: amqp
+          protocol: TCP
+          containerPort: 5672
+        - name: management
+          protocol: TCP
+          containerPort: 8161
+        resources:
+          limits:
+            cpu: 800m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        livenessProbe:
+          tcpSocket:
+            port: amqp
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: amqp
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: activemq-cluster-secret
+          mountPath: /opt/apache-activemq-5.10.0/conf/jetty-realm.properties
+          subPath: jetty-realm.properties
+        - name: activemq-config
+          mountPath: /opt/apache-activemq-5.10.0/conf/activemq.xml
+          subPath: activemq.xml
+        - name: activemq-config
+          mountPath: /opt/apache-activemq-5.10.0/conf/jetty.xml
+          subPath: jetty.xml
+        - mountPath: /opt/apache-activemq-5.10.0/data
+          name: activemq-data-pvc
+      volumes:
+        - name: activemq-cluster-secret
+          secret:
+            secretName: activemq-cluster-secret
+        - name: activemq-config
+          configMap:
+            name: activemq-config
+  volumeClaimTemplates:
+  - metadata:
+      name: activemq-data-pvc
+      namespace: activemq-system
+      labels:
+        app.kubernetes.io/name: activemq-cluster
+        app.kubernetes.io/part-of: messaging-system
+        app.kubernetes.io/component: message-broker
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi

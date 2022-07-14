@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: rabbitmq-system
+  labels:
+    app.kubernetes.io/name: rabbitmq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+data:
+  enabled_plugins: |
+      [rabbitmq_peer_discovery_k8s,rabbitmq_prometheus,rabbitmq_management].
+  rabbitmq.conf: |
+      cluster_formation.peer_discovery_backend  = rabbit_peer_discovery_k8s
+      cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
+      cluster_formation.k8s.address_type = hostname
+      cluster_formation.k8s.service_name = rabbitmq-cluster-nodes
+      cluster_formation.k8s.hostname_suffix = .rabbitmq-cluster-nodes.rabbitmq-system.svc.cluster.local
+      loopback_users.guest = false
+      cluster_partition_handling = pause_minority
+      vm_memory_high_watermark_paging_ratio = 0.99
+      disk_free_limit.relative = 1.0
+      collect_statistics_interval = 10000

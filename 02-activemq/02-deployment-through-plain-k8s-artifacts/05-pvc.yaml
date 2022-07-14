@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: activemq-data-pvc
+  namespace: activemq-system
+  labels:
+    app.kubernetes.io/name: activemq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi

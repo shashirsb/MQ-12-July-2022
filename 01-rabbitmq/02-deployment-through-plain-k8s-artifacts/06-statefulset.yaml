@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq-cluster-server
+  namespace: rabbitmq-system
+  labels:
+    app.kubernetes.io/name: rabbitmq-cluster
+    app.kubernetes.io/part-of: messaging-system
+    app.kubernetes.io/component: message-broker
+spec:
+  serviceName: rabbitmq-cluster-nodes
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq-cluster
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq-cluster
+        app.kubernetes.io/part-of: messaging-system
+        app.kubernetes.io/component: message-broker
+    spec:
+      serviceAccountName: rabbitmq-cluster-server
+      initContainers:
+      - name: setup-container
+        image: busybox:1.35.0
+        imagePullPolicy: Always
+        command:
+        - sh
+        - -c
+        - cp /config-volume/* /config/
+          && cp /tmp/erlang-cookie-secret/.erlang.cookie /var/lib/rabbitmq/.erlang.cookie
+          && chmod 600 /var/lib/rabbitmq/.erlang.cookie
+        resources:
+          limits:
+            cpu: 100m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 500Mi
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: config-volume
+          mountPath: /config-volume
+        - mountPath: /tmp/erlang-cookie-secret/
+          name: erlang-cookie-secret
+        - mountPath: /var/lib/rabbitmq/
+          name: rabbitmq-erlang-cookie
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3.10.5-management
+        imagePullPolicy: Always
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - >
+                if [ -z "$(grep rabbitmq /etc/resolv.conf)" ]; then
+                  sed "s/^search \([^ ]\+\)/search rabbitmq.\1 \1/" /etc/resolv.conf > /etc/resolv.conf.new;
+                  cat /etc/resolv.conf.new > /etc/resolv.conf;
+                  rm /etc/resolv.conf.new;
+                fi;
+                until rabbitmqctl node_health_check; do sleep 1; done;
+                rabbitmqctl set_policy ha-all "." '{"ha-mode":"exactly","ha-params":3,"ha-sync-mode":"automatic"}';
+        env:
+        - name: POD_HOSTNAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-cluster-secret
+              key: rabbitmq-default-user
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-cluster-secret
+              key: rabbitmq-default-pass
+        - name: K8S_SERVICE_NAME
+          value: rabbitmq-cluster-nodes
+        - name: RABBITMQ_USE_LONGNAME
+          value: "true"
+        - name: RABBITMQ_NODENAME
+          value: rabbit@$(POD_HOSTNAME).$(K8S_SERVICE_NAME).$(POD_NAMESPACE).svc.cluster.local
+        - name: K8S_HOSTNAME_SUFFIX
+          value: .$(K8S_SERVICE_NAME).$(POD_NAMESPACE).svc.cluster.local
+        ports:
+        - name: amqp
+          protocol: TCP
+          containerPort: 5672
+        - name: management
+          protocol: TCP
+          containerPort: 15672
+        - name: metrics
+          protocol: TCP
+          containerPort: 15692
+        resources:
+          limits:
+            cpu: 1
+            memory: 16Gi
+          requests:
+            cpu: 1
+            memory: 16Gi
+        livenessProbe:
+          tcpSocket:
+            port: amqp
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: amqp
+          initialDelaySeconds: 30
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: /var/lib/rabbitmq/mnesia/
+          name: rabbitmq-data-pvc
+        - name: config
+          mountPath: /etc/rabbitmq
+        - mountPath: /var/lib/rabbitmq/
+          name: rabbitmq-erlang-cookie
+      # imagePullSecrets:
+      # - name: ocirsecret
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: rabbitmq-cluster
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway # DoNotSchedule, ScheduleAnyway
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: rabbitmq-config
+            items:
+            - key: rabbitmq.conf
+              path: rabbitmq.conf
+            - key: enabled_plugins
+              path: enabled_plugins
+        - name: erlang-cookie-secret
+          secret:
+            secretName: rabbitmq-cluster-erlang-cookie
+        - emptyDir: {}
+          name: rabbitmq-erlang-cookie
+  volumeClaimTemplates:
+  - metadata:
+      name: rabbitmq-data-pvc
+      namespace: rabbitmq-system
+      labels:
+        app.kubernetes.io/name: rabbitmq-cluster
+        app.kubernetes.io/part-of: messaging-system
+        app.kubernetes.io/component: message-broker
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
